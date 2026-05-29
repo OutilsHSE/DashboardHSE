@@ -8,6 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -538,6 +539,78 @@
       background: rgba(255,255,255,0.22);
     }
 
+    /* ===== FILTRES ===== */
+    .filter-zone {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dashboard-meta {
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    /* ===== RÉCURRENCES ===== */
+    .recurrence-item {
+      background: var(--gris-clair);
+      border-left: 4px solid var(--orange);
+      padding: 14px 18px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      transition: all 0.15s;
+    }
+
+    .recurrence-item:hover {
+      background: var(--bleu-pale);
+      border-left-color: var(--bleu-clair);
+    }
+
+    .recurrence-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .recurrence-title {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--bleu-marine);
+      letter-spacing: 0.5px;
+    }
+
+    .recurrence-badge {
+      background: var(--orange);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      font-family: 'Barlow Condensed', sans-serif;
+    }
+
+    .recurrence-badge.critique { background: var(--rouge); }
+    .recurrence-badge.moyen { background: var(--orange); }
+    .recurrence-badge.faible { background: var(--bleu-clair); }
+
+    .recurrence-desc {
+      font-size: 0.9rem;
+      color: var(--texte);
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .recurrence-chantiers {
+      font-size: 0.82rem;
+      color: var(--gris-fonce);
+    }
+
+    .recurrence-chantiers strong {
+      color: var(--bleu-marine);
+    }
+
     /* ===== MOTS-CLÉS ===== */
     .keywords-cloud {
       display: flex;
@@ -641,6 +714,7 @@
       <div class="header-actions" id="header-actions" style="display:none;">
         <button class="btn btn-secondary" onclick="resetDashboard()">📂 Nouveau fichier</button>
         <button class="btn btn-export" onclick="exportPNG()">📸 Exporter PNG</button>
+        <button class="btn btn-export" onclick="exportPDF()">📄 Exporter PDF</button>
       </div>
     </div>
   </header>
@@ -662,9 +736,21 @@
       <div class="info">
         <strong id="meta-onglet">2026</strong> · <span id="meta-nb-actions">0</span> actions · Période : <span id="meta-periode">—</span>
       </div>
+      <div class="filter-zone">
+        <label for="filter-chantier" style="font-size:0.85rem;color:var(--gris-fonce);margin-right:8px">Filtrer par chantier :</label>
+        <select id="filter-chantier" onchange="appliquerFiltre(this.value)" style="padding:6px 10px;border:1px solid var(--gris-bord);border-radius:6px;font-family:Barlow;font-size:0.88rem;background:white">
+          <option value="">Tous les chantiers</option>
+        </select>
+        <button id="reset-filter" onclick="appliquerFiltre('')" style="display:none;margin-left:8px;background:var(--rouge);color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.82rem;font-weight:600">✕ Reset</button>
+      </div>
       <div class="info">
         Date d'analyse : <strong id="meta-date">—</strong>
       </div>
+    </div>
+
+    <div id="filter-badge" style="display:none;background:linear-gradient(135deg,var(--bleu-marine),var(--bleu-clair));color:white;padding:10px 18px;border-radius:8px;margin-bottom:16px;font-weight:600;display:none;align-items:center;justify-content:space-between">
+      <span>🔍 Filtre actif : <strong id="filter-active-name"></strong> (<span id="filter-active-count">0</span> actions)</span>
+      <button onclick="appliquerFiltre('')" style="background:rgba(255,255,255,0.25);color:white;border:1px solid rgba(255,255,255,0.4);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:0.82rem">Voir tous les chantiers</button>
     </div>
 
     <!-- KPI -->
@@ -675,6 +761,14 @@
       <h3>Analyse intelligente Groq AI</h3>
       <div class="ia-content" id="ia-content">
         <div class="ia-loader">Analyse en cours</div>
+      </div>
+    </div>
+
+    <!-- RÉCURRENCES DÉTECTÉES -->
+    <div class="chart-card wide" style="margin-bottom:24px">
+      <h3><span class="dot"></span>Récurrences détectées par l'IA</h3>
+      <div id="recurrences-content">
+        <div class="ia-loader" style="color:var(--bleu-marine)">Analyse des récurrences en cours</div>
       </div>
     </div>
 
@@ -754,6 +848,8 @@
     const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
     let donneesGlobales = [];
+    let donneesFiltrees = [];
+    let chantierFiltre = '';
     let chartsInstances = {};
 
     // ===== TOAST =====
@@ -848,11 +944,16 @@
       document.getElementById('dashboard').style.display = 'block';
       document.getElementById('header-actions').style.display = 'flex';
 
-      document.getElementById('meta-nb-actions').textContent = donneesGlobales.length;
+      // Remplir le dropdown des chantiers
+      remplirDropdownChantiers();
+
+      // Appliquer le filtre (par défaut : tous)
+      majDonneesFiltrees();
+
       document.getElementById('meta-date').textContent = new Date().toLocaleDateString('fr-FR');
 
       // Période
-      const dates = donneesGlobales.map(d => d.date_ajout).filter(Boolean);
+      const dates = donneesFiltrees.map(d => d.date_ajout).filter(Boolean);
       if (dates.length > 0) {
         const dateStr = (d) => {
           if (d instanceof Date) return d.toLocaleDateString('fr-FR');
@@ -861,6 +962,12 @@
         document.getElementById('meta-periode').textContent =
           dateStr(dates[0]) + ' → ' + dateStr(dates[dates.length-1]);
       }
+
+      renderAll();
+    }
+
+    function renderAll() {
+      document.getElementById('meta-nb-actions').textContent = donneesFiltrees.length;
 
       renderKPI();
       renderStatuts();
@@ -873,6 +980,41 @@
       renderKeywords();
       renderCarte();
       analyserIA();
+      analyserRecurrences();
+    }
+
+    function remplirDropdownChantiers() {
+      const select = document.getElementById('filter-chantier');
+      const chantiers = [...new Set(donneesGlobales.map(d => d.chantier).filter(Boolean))].sort();
+      select.innerHTML = '<option value="">Tous les chantiers</option>' +
+        chantiers.map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('');
+    }
+
+    function appliquerFiltre(chantier) {
+      chantierFiltre = chantier;
+      document.getElementById('filter-chantier').value = chantier;
+      document.getElementById('reset-filter').style.display = chantier ? 'inline-block' : 'none';
+
+      const badge = document.getElementById('filter-badge');
+      if (chantier) {
+        badge.style.display = 'flex';
+        document.getElementById('filter-active-name').textContent = chantier;
+        const count = donneesGlobales.filter(d => d.chantier === chantier).length;
+        document.getElementById('filter-active-count').textContent = count;
+      } else {
+        badge.style.display = 'none';
+      }
+
+      majDonneesFiltrees();
+      renderAll();
+    }
+
+    function majDonneesFiltrees() {
+      if (chantierFiltre) {
+        donneesFiltrees = donneesGlobales.filter(d => d.chantier === chantierFiltre);
+      } else {
+        donneesFiltrees = donneesGlobales;
+      }
     }
 
     // ===== CARTOGRAPHIE DES CHANTIERS =====
@@ -895,7 +1037,7 @@
     async function renderCarte() {
       // Compter par chantier
       const cnt = {};
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         const c = d.chantier || 'Non spécifié';
         cnt[c] = (cnt[c] || 0) + 1;
       });
@@ -941,8 +1083,8 @@
         const color = ratio > 0.6 ? '#E63946' : ratio > 0.3 ? '#F4A03A' : '#0077B6';
 
         // Statistiques par chantier
-        const cloturees = donneesGlobales.filter(d => d.chantier === c.nom && normStatut(d.statut) === 'Clôturée').length;
-        const enRetard = donneesGlobales.filter(d => {
+        const cloturees = donneesFiltrees.filter(d => d.chantier === c.nom && normStatut(d.statut) === 'Clôturée').length;
+        const enRetard = donneesFiltrees.filter(d => {
           if (d.chantier !== c.nom) return false;
           if (normStatut(d.statut) === 'Clôturée') return false;
           let de = d.date_cloture || d.echeance;
@@ -951,6 +1093,7 @@
           return de instanceof Date && !isNaN(de) && de < new Date();
         }).length;
 
+        const escNomMap = c.nom.replace(/'/g, "\\'");
         const popupHtml = `
           <div style="font-family:Barlow,sans-serif;min-width:200px">
             <h4 style="margin:0 0 6px 0;color:#003A6E;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem">${c.nom}</h4>
@@ -960,6 +1103,7 @@
               ✓ ${cloturees} clôturée${cloturees>1?'s':''}<br>
               ${enRetard > 0 ? '⚠️ <span style="color:#E63946"><strong>' + enRetard + ' en retard</strong></span>' : ''}
             </div>
+            <button onclick="appliquerFiltre('${escNomMap}')" style="margin-top:10px;width:100%;background:#0077B6;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.85rem">🔍 Filtrer ce chantier</button>
           </div>
         `;
 
@@ -1052,7 +1196,7 @@
         statuts.forEach(s => matrix[d][s] = 0);
       });
 
-      donneesGlobales.forEach(item => {
+      donneesFiltrees.forEach(item => {
         const dom = item.domaine;
         const st = normStatut(item.statut);
         if (matrix[dom] && matrix[dom][st] !== undefined) {
@@ -1149,7 +1293,7 @@
       const counts = {};
       Object.keys(termsHSE).forEach(k => counts[k] = 0);
 
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         const texte = ((d.observation || '') + ' ' + (d.action || '')).toLowerCase();
         Object.entries(termsHSE).forEach(([categorie, mots]) => {
           for (const mot of mots) {
@@ -1186,17 +1330,17 @@
 
     // ===== KPI =====
     function renderKPI() {
-      const total = donneesGlobales.length;
-      const cloturees = donneesGlobales.filter(d => normStatut(d.statut) === 'Clôturée').length;
-      const enCours = donneesGlobales.filter(d => normStatut(d.statut) === 'En cours').length;
-      const aTraiter = donneesGlobales.filter(d => ['A planifier', 'A traiter'].includes(normStatut(d.statut))).length;
-      const critique = donneesGlobales.filter(d => d.impact === 'Critique' || d.impact === 'Fort').length;
-      const transversaux = donneesGlobales.filter(d => d.transversal === 'Oui').length;
+      const total = donneesFiltrees.length;
+      const cloturees = donneesFiltrees.filter(d => normStatut(d.statut) === 'Clôturée').length;
+      const enCours = donneesFiltrees.filter(d => normStatut(d.statut) === 'En cours').length;
+      const aTraiter = donneesFiltrees.filter(d => ['A planifier', 'A traiter'].includes(normStatut(d.statut))).length;
+      const critique = donneesFiltrees.filter(d => d.impact === 'Critique' || d.impact === 'Fort').length;
+      const transversaux = donneesFiltrees.filter(d => d.transversal === 'Oui').length;
       const tauxCloture = total > 0 ? Math.round(cloturees / total * 100) : 0;
 
       // Actions en retard : échéance dépassée ET statut ≠ Clôturée
       const aujourd = new Date();
-      const enRetard = donneesGlobales.filter(d => {
+      const enRetard = donneesFiltrees.filter(d => {
         if (normStatut(d.statut) === 'Clôturée') return false;
         let dateEch = d.date_cloture || d.echeance;
         if (!dateEch) return false;
@@ -1237,7 +1381,7 @@
     // ===== STATUTS =====
     function renderStatuts() {
       const cnt = { 'Clôturée': 0, 'En cours': 0, 'A planifier': 0, 'A traiter': 0 };
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         const s = normStatut(d.statut);
         if (cnt[s] !== undefined) cnt[s]++;
       });
@@ -1253,7 +1397,7 @@
     // ===== TOP CHANTIERS =====
     function renderTopChantiers() {
       const cnt = {};
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         const c = d.chantier || 'Non spécifié';
         cnt[c] = (cnt[c] || 0) + 1;
       });
@@ -1263,8 +1407,9 @@
       document.getElementById('ranking-chantiers').innerHTML = top.map(([nom, nb], i) => {
         const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
         const pct = (nb / max * 100).toFixed(0);
+        const escNom = nom.replace(/'/g, "\\'");
         return `
-          <div class="ranking-item">
+          <div class="ranking-item" style="cursor:pointer" onclick="appliquerFiltre('${escNom}')" title="Cliquer pour filtrer sur ${nom}">
             <span class="ranking-rank ${rankClass}">${i+1}</span>
             <div class="ranking-bar-wrap">
               <span class="ranking-name">${nom}</span>
@@ -1278,7 +1423,7 @@
     // ===== CHART DOMAINES =====
     function renderChartDomaines() {
       const cnt = {};
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         const dom = d.domaine || 'Non spécifié';
         cnt[dom] = (cnt[dom] || 0) + 1;
       });
@@ -1369,7 +1514,7 @@
     // ===== CHART IMPACTS =====
     function renderChartImpacts() {
       const cnt = { 'Critique': 0, 'Fort': 0, 'Moyen': 0, 'Faible': 0 };
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         if (cnt[d.impact] !== undefined) cnt[d.impact]++;
       });
       const total = Object.values(cnt).reduce((a,b)=>a+b, 0);
@@ -1428,7 +1573,7 @@
     // ===== CHART EVOLUTION =====
     function renderChartEvolution() {
       const moisCnt = {};
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         let date = d.date_ajout;
         if (!date) return;
         if (typeof date === 'string') date = new Date(date);
@@ -1477,14 +1622,14 @@
     // ===== HEATMAP =====
     function renderHeatmap() {
       const topChantiers = Object.entries(
-        donneesGlobales.reduce((acc, d) => {
+        donneesFiltrees.reduce((acc, d) => {
           const c = d.chantier || 'N/A';
           acc[c] = (acc[c] || 0) + 1;
           return acc;
         }, {})
       ).sort((a,b)=>b[1]-a[1]).slice(0, 8).map(e=>e[0]);
 
-      const moisDispo = [...new Set(donneesGlobales.map(d => {
+      const moisDispo = [...new Set(donneesFiltrees.map(d => {
         let date = d.date_ajout;
         if (!date) return null;
         if (typeof date === 'string') date = new Date(date);
@@ -1506,7 +1651,7 @@
         counts[c] = {};
         moisDispo.forEach(m => counts[c][m] = 0);
       });
-      donneesGlobales.forEach(d => {
+      donneesFiltrees.forEach(d => {
         const c = d.chantier || 'N/A';
         if (!topChantiers.includes(c)) return;
         let date = d.date_ajout;
@@ -1595,11 +1740,11 @@ Sois concis, factuel, orienté action. Pas de blabla.`;
     }
 
     function preparerSyntheseIA() {
-      const total = donneesGlobales.length;
-      const cloturees = donneesGlobales.filter(d => normStatut(d.statut) === 'Clôturée').length;
+      const total = donneesFiltrees.length;
+      const cloturees = donneesFiltrees.filter(d => normStatut(d.statut) === 'Clôturée').length;
       const cnt = (key) => {
         const c = {};
-        donneesGlobales.forEach(d => {
+        donneesFiltrees.forEach(d => {
           const v = d[key] || 'N/A';
           c[v] = (c[v] || 0) + 1;
         });
@@ -1611,7 +1756,7 @@ Sois concis, factuel, orienté action. Pas de blabla.`;
       const topImpacts = cnt('impact').map(([n,v]) => `${n}: ${v}`).join(', ');
 
       // Quelques observations clés (les plus critiques non clôturées)
-      const critiques = donneesGlobales
+      const critiques = donneesFiltrees
         .filter(d => ['Critique','Fort'].includes(d.impact) && normStatut(d.statut) !== 'Clôturée')
         .slice(0, 10)
         .map(d => `[${d.chantier}] ${d.observation || ''}`.substring(0, 150));
@@ -1645,7 +1790,419 @@ ${critiques.join('\n')}
       return html;
     }
 
-    // ===== EXPORT PNG =====
+    // ===== RÉCURRENCES DÉTECTÉES PAR IA =====
+    async function analyserRecurrences() {
+      const content = document.getElementById('recurrences-content');
+      content.innerHTML = '<div class="ia-loader" style="color:var(--bleu-marine)">Analyse des récurrences en cours</div>';
+
+      // Préparer les données : grouper par mots-clés et chantier
+      const occurrencesParChantier = {};
+      donneesFiltrees.forEach(d => {
+        const c = d.chantier || 'N/A';
+        if (!occurrencesParChantier[c]) occurrencesParChantier[c] = [];
+        occurrencesParChantier[c].push({
+          obs: (d.observation || '').substring(0, 200),
+          domaine: d.domaine,
+          impact: d.impact,
+          statut: d.statut
+        });
+      });
+
+      // Ne garder que les chantiers avec 2+ observations (potentielles récurrences)
+      const chantiersRepetes = Object.entries(occurrencesParChantier)
+        .filter(([c, obs]) => obs.length >= 2)
+        .sort((a,b) => b[1].length - a[1].length)
+        .slice(0, 8);
+
+      if (chantiersRepetes.length === 0) {
+        content.innerHTML = '<p style="color:var(--gris-fonce);font-size:0.92rem">Pas assez de données pour détecter des récurrences. Au moins 2 observations par chantier sont nécessaires.</p>';
+        return;
+      }
+
+      const synthese = chantiersRepetes.map(([c, obs]) => {
+        return `=== Chantier "${c}" (${obs.length} observations) ===
+${obs.map((o, i) => `${i+1}. [${o.domaine || '?'}/${o.impact || '?'}/${normStatut(o.statut)}] ${o.obs}`).join('\n')}`;
+      }).join('\n\n');
+
+      const prompt = `Tu es un consultant HSE expert. Analyse ces observations de chantiers et identifie les RÉCURRENCES.
+
+Une récurrence = un même type de problème qui se répète (soit textuellement similaire, soit thématiquement proche, soit avec les mêmes mots-clés HSE comme EPI, balisage, formation, levage, échelle, VGP, coactivité, etc.).
+
+DONNÉES :
+${synthese}
+
+Renvoie un JSON valide STRICTEMENT (rien d'autre, pas de texte avant/après, pas de markdown) :
+
+[
+  {
+    "thematique": "titre court de la récurrence (5-10 mots)",
+    "description": "explication factuelle 1-2 phrases sur le problème récurrent",
+    "chantiers": ["chantier1", "chantier2"],
+    "nb_occurrences": 4,
+    "criticite": "Critique" ou "Moyen" ou "Faible",
+    "recommandation": "action à mener pour traiter la cause racine, 1 phrase"
+  }
+]
+
+Retourne 3 à 6 récurrences max, classées par criticité décroissante. Si pas de récurrence claire, retourne [].`;
+
+      try {
+        const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + GROQ_API_KEY
+          },
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3,
+            max_tokens: 1500
+          })
+        });
+        const data = await resp.json();
+        if (!data.choices || !data.choices[0]) throw new Error('IA indisponible');
+
+        let texte = data.choices[0].message.content.trim();
+        texte = texte.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+        const recurrences = JSON.parse(texte);
+
+        if (!Array.isArray(recurrences) || recurrences.length === 0) {
+          content.innerHTML = '<p style="color:var(--gris-fonce);font-size:0.92rem">Aucune récurrence significative détectée. Vos observations sont relativement variées.</p>';
+          return;
+        }
+
+        const html = recurrences.map(r => {
+          const badgeClass = r.criticite === 'Critique' ? 'critique' : r.criticite === 'Moyen' ? 'moyen' : 'faible';
+          const chantiersList = (r.chantiers || []).join(', ');
+          return `
+            <div class="recurrence-item">
+              <div class="recurrence-header">
+                <span class="recurrence-title">${r.thematique}</span>
+                <span class="recurrence-badge ${badgeClass}">${r.nb_occurrences || '?'} occurrences · ${r.criticite}</span>
+              </div>
+              <div class="recurrence-desc">${r.description}</div>
+              <div class="recurrence-chantiers">
+                📍 <strong>Chantiers concernés :</strong> ${chantiersList}<br>
+                💡 <strong>Recommandation IA :</strong> ${r.recommandation}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        content.innerHTML = html;
+      } catch (e) {
+        console.error('Erreur récurrences:', e);
+        content.innerHTML = '<p style="color:var(--gris-fonce);font-size:0.92rem">⚠️ Analyse des récurrences temporairement indisponible.</p>';
+      }
+    }
+
+    // ===== EXPORT PDF =====
+    async function exportPDF() {
+      toast('Génération du rapport PDF en cours...');
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const marge = 15;
+      let y = marge;
+
+      // ===== PAGE 1 : PAGE DE GARDE =====
+      doc.setFillColor(0, 58, 110);
+      doc.rect(0, 0, pageWidth, 60, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(28);
+      doc.text('RAPPORT HSE', pageWidth/2, 30, { align: 'center' });
+
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Synthèse du plan d\'action', pageWidth/2, 42, { align: 'center' });
+
+      doc.setFontSize(11);
+      doc.text('CDES — Compagnie de Dragage de l\'Estuaire et de la Seine', pageWidth/2, 50, { align: 'center' });
+
+      // Cartouche infos
+      doc.setTextColor(50, 50, 50);
+      y = 80;
+      doc.setFillColor(245, 247, 250);
+      doc.rect(marge, y, pageWidth - 2*marge, 50, 'F');
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Période analysée :', marge + 5, y + 12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(document.getElementById('meta-periode').textContent || '—', marge + 55, y + 12);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Nombre d\'actions :', marge + 5, y + 22);
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(donneesFiltrees.length), marge + 55, y + 22);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Filtre actif :', marge + 5, y + 32);
+      doc.setFont('helvetica', 'normal');
+      doc.text(chantierFiltre || 'Tous les chantiers', marge + 55, y + 32);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Date d\'édition :', marge + 5, y + 42);
+      doc.setFont('helvetica', 'normal');
+      doc.text(new Date().toLocaleDateString('fr-FR'), marge + 55, y + 42);
+
+      // Sommaire
+      y = 145;
+      doc.setFontSize(16);
+      doc.setTextColor(0, 58, 110);
+      doc.setFont('helvetica', 'bold');
+      doc.text('SOMMAIRE', marge, y);
+
+      y += 10;
+      doc.setFontSize(11);
+      doc.setTextColor(50, 50, 50);
+      doc.setFont('helvetica', 'normal');
+      const sommaire = [
+        '1. Indicateurs clés de performance (KPI)',
+        '2. Analyse intelligente Groq AI',
+        '3. Récurrences détectées',
+        '4. Répartition par domaine et niveau d\'impact',
+        '5. Top chantiers',
+        '6. Actions critiques non clôturées',
+        '7. Visualisations (graphiques)'
+      ];
+      sommaire.forEach(s => {
+        doc.text(s, marge + 5, y);
+        y += 7;
+      });
+
+      // Footer page 1
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Document confidentiel — CDES — généré automatiquement', pageWidth/2, pageHeight - 10, { align: 'center' });
+
+      // ===== PAGE 2 : KPI =====
+      doc.addPage();
+      y = marge;
+      doc.setTextColor(0, 58, 110);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('1. INDICATEURS CLÉS', marge, y);
+      y += 3;
+      doc.setDrawColor(0, 180, 216);
+      doc.setLineWidth(0.8);
+      doc.line(marge, y, pageWidth - marge, y);
+      y += 10;
+
+      const total = donneesFiltrees.length;
+      const cloturees = donneesFiltrees.filter(d => normStatut(d.statut) === 'Clôturée').length;
+      const enCours = donneesFiltrees.filter(d => normStatut(d.statut) === 'En cours').length;
+      const aTraiter = donneesFiltrees.filter(d => ['A planifier', 'A traiter'].includes(normStatut(d.statut))).length;
+      const critique = donneesFiltrees.filter(d => d.impact === 'Critique' || d.impact === 'Fort').length;
+      const transversaux = donneesFiltrees.filter(d => d.transversal === 'Oui').length;
+      const aujourd = new Date();
+      const enRetard = donneesFiltrees.filter(d => {
+        if (normStatut(d.statut) === 'Clôturée') return false;
+        let de = d.date_cloture || d.echeance;
+        if (!de) return false;
+        if (typeof de === 'string') de = new Date(de);
+        return de instanceof Date && !isNaN(de) && de < aujourd;
+      }).length;
+      const tauxCloture = total > 0 ? Math.round(cloturees / total * 100) : 0;
+
+      const kpisData = [
+        ['Total actions', total, 'Identifiées sur la période'],
+        ['Clôturées', `${cloturees} (${tauxCloture}%)`, 'Taux de clôture'],
+        ['En cours', enCours, 'Actions actives'],
+        ['À traiter', aTraiter, 'Actions non démarrées'],
+        ['En retard ⚠', enRetard, 'Échéance dépassée et non clôturée'],
+        ['Risques élevés', critique, 'Impact Critique ou Fort'],
+        ['Transversales', transversaux, 'Concernent plusieurs chantiers']
+      ];
+
+      doc.setFontSize(11);
+      kpisData.forEach(([label, val, desc]) => {
+        doc.setFillColor(245, 247, 250);
+        doc.rect(marge, y, pageWidth - 2*marge, 14, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 58, 110);
+        doc.text(label, marge + 5, y + 6);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(50, 50, 50);
+        doc.setFontSize(9);
+        doc.text(desc, marge + 5, y + 11);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(0, 119, 182);
+        doc.text(String(val), pageWidth - marge - 5, y + 9, { align: 'right' });
+        doc.setFontSize(11);
+        y += 17;
+      });
+
+      // ===== PAGE 3 : ANALYSE IA =====
+      doc.addPage();
+      y = marge;
+      doc.setTextColor(0, 58, 110);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('2. ANALYSE INTELLIGENTE', marge, y);
+      y += 3;
+      doc.line(marge, y, pageWidth - marge, y);
+      y += 10;
+
+      const iaText = document.getElementById('ia-content').textContent || 'Analyse IA non disponible.';
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(50, 50, 50);
+      const iaLines = doc.splitTextToSize(iaText, pageWidth - 2*marge);
+      iaLines.forEach(line => {
+        if (y > pageHeight - 20) { doc.addPage(); y = marge; }
+        doc.text(line, marge, y);
+        y += 5;
+      });
+
+      // ===== PAGE : RÉCURRENCES =====
+      doc.addPage();
+      y = marge;
+      doc.setTextColor(0, 58, 110);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('3. RÉCURRENCES DÉTECTÉES', marge, y);
+      y += 3;
+      doc.line(marge, y, pageWidth - marge, y);
+      y += 10;
+
+      const recItems = document.querySelectorAll('.recurrence-item');
+      if (recItems.length === 0) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(100, 100, 100);
+        doc.text('Aucune récurrence significative détectée.', marge, y);
+      } else {
+        recItems.forEach(item => {
+          if (y > pageHeight - 50) { doc.addPage(); y = marge; }
+          const titre = item.querySelector('.recurrence-title').textContent;
+          const badge = item.querySelector('.recurrence-badge').textContent;
+          const desc = item.querySelector('.recurrence-desc').textContent;
+          const chantiers = item.querySelector('.recurrence-chantiers').textContent;
+
+          doc.setFillColor(245, 247, 250);
+          doc.rect(marge, y, pageWidth - 2*marge, 4, 'F');
+          doc.setFillColor(244, 160, 58);
+          doc.rect(marge, y, 3, 4, 'F');
+          y += 2;
+
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(0, 58, 110);
+          doc.text(titre + ' (' + badge + ')', marge + 5, y + 4);
+          y += 8;
+
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(50, 50, 50);
+          const dLines = doc.splitTextToSize(desc, pageWidth - 2*marge - 10);
+          dLines.forEach(line => { doc.text(line, marge + 5, y); y += 4.5; });
+
+          const cLines = doc.splitTextToSize(chantiers, pageWidth - 2*marge - 10);
+          cLines.forEach(line => { doc.text(line, marge + 5, y); y += 4.5; });
+
+          y += 6;
+        });
+      }
+
+      // ===== PAGE : ACTIONS CRITIQUES =====
+      doc.addPage();
+      y = marge;
+      doc.setTextColor(0, 58, 110);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('6. ACTIONS CRITIQUES NON CLÔTURÉES', marge, y);
+      y += 3;
+      doc.line(marge, y, pageWidth - marge, y);
+      y += 10;
+
+      const actionsCritiques = donneesFiltrees
+        .filter(d => ['Critique', 'Fort'].includes(d.impact) && normStatut(d.statut) !== 'Clôturée')
+        .slice(0, 30);
+
+      if (actionsCritiques.length === 0) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(100, 100, 100);
+        doc.text('Aucune action critique non clôturée.', marge, y);
+      } else {
+        doc.setFontSize(9);
+        actionsCritiques.forEach((a, i) => {
+          if (y > pageHeight - 25) { doc.addPage(); y = marge; }
+
+          doc.setFillColor(255, 235, 235);
+          doc.rect(marge, y, pageWidth - 2*marge, 5, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(180, 37, 49);
+          doc.text((i+1) + '. ' + (a.chantier || '?') + ' — ' + (a.impact || '?'), marge + 2, y + 3.5);
+          y += 7;
+
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(50, 50, 50);
+          const obsTxt = 'Observation : ' + (a.observation || '(vide)').substring(0, 250);
+          const obsLines = doc.splitTextToSize(obsTxt, pageWidth - 2*marge - 4);
+          obsLines.slice(0, 3).forEach(line => { doc.text(line, marge + 2, y); y += 4; });
+
+          if (a.action) {
+            const actTxt = 'Action : ' + a.action.substring(0, 200);
+            const actLines = doc.splitTextToSize(actTxt, pageWidth - 2*marge - 4);
+            actLines.slice(0, 2).forEach(line => { doc.text(line, marge + 2, y); y += 4; });
+          }
+          y += 3;
+        });
+      }
+
+      // ===== PAGE VISUELS =====
+      doc.addPage();
+      y = marge;
+      doc.setTextColor(0, 58, 110);
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('7. VISUALISATIONS', marge, y);
+      y += 3;
+      doc.line(marge, y, pageWidth - marge, y);
+      y += 8;
+
+      // Capture les charts et ajoute en images
+      const chartIds = ['chart-domaines', 'chart-impacts', 'chart-evolution'];
+      for (const id of chartIds) {
+        try {
+          const canvas = document.getElementById(id);
+          if (!canvas) continue;
+          const img = canvas.toDataURL('image/png');
+          if (y > pageHeight - 90) { doc.addPage(); y = marge; }
+          doc.addImage(img, 'PNG', marge, y, pageWidth - 2*marge, 75);
+          y += 80;
+        } catch (e) {
+          console.error('Erreur capture chart', id, e);
+        }
+      }
+
+      // Numérotation pages
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.setFont('helvetica', 'normal');
+        if (i > 1) {
+          doc.text('Rapport HSE — page ' + i + '/' + totalPages, pageWidth - marge, pageHeight - 8, { align: 'right' });
+        }
+      }
+
+      const filename = 'Rapport_HSE_' + new Date().toISOString().slice(0,10)
+        + (chantierFiltre ? '_' + chantierFiltre.replace(/[^a-z0-9]/gi, '_') : '')
+        + '.pdf';
+      doc.save(filename);
+      toast('✅ Rapport PDF généré', 'success');
+    }
     function exportPNG() {
       toast('Génération de l\'image...');
       const dashboard = document.getElementById('dashboard');
