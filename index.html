@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard HSE — Analyse IA</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    :root {
+      --bleu-marine: #003A6E;
+      --bleu-clair: #0077B6;
+      --bleu-accent: #00B4D8;
+      --bleu-pale: #E8F4FD;
+      --vert: #2DC653;
+      --vert-fonce: #1B7A3A;
+      --orange: #F4A03A;
+      --orange-fonce: #C47D00;
+      --rouge: #E63946;
+      --rouge-fonce: #B82531;
+      --jaune: #FFC93C;
+      --gris-clair: #F5F7FA;
+      --gris-bord: #D0DAE8;
+      --gris-fonce: #5A6B82;
+      --texte: #1A2B3C;
+      --blanc: #FFFFFF;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Barlow', sans-serif;
+      background: var(--gris-clair);
+      color: var(--texte);
+      min-height: 100vh;
+    }
+
+    /* ===== HEADER ===== */
+    .header {
+      background: linear-gradient(135deg, var(--bleu-marine) 0%, var(--bleu-clair) 50%, var(--vert) 100%);
+      padding: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -10%;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: rgba(45, 198, 83, 0.15);
+      pointer-events: none;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header-title-wrap {
+      color: white;
+    }
+
+    .header-title-wrap h1 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 2px;
+      line-height: 1;
+    }
+
+    .header-title-wrap p {
+      font-size: 0.88rem;
+      opacity: 0.85;
+      margin-top: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* ===== ZONE UPLOAD ===== */
+    .upload-zone {
+      max-width: 1400px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+
+    .upload-card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,58,110,0.08);
+      border: 2px dashed var(--gris-bord);
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+
+    .upload-card:hover {
+      border-color: var(--bleu-accent);
+      background: var(--bleu-pale);
+    }
+
+    .upload-card .icon {
+      font-size: 3.5rem;
+      margin-bottom: 12px;
+    }
+
+    .upload-card h2 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.6rem;
+      color: var(--bleu-marine);
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+
+    .upload-card p {
+      color: var(--gris-fonce);
+      font-size: 0.95rem;
+    }
+
+    /* ===== DASHBOARD ===== */
+    #dashboard {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+      display: none;
+    }
+
+    .dashboard-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      background: white;
+      padding: 16px 24px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,58,110,0.07);
+    }
+
+    .dashboard-meta .info {
+      font-size: 0.92rem;
+      color: var(--gris-fonce);
+    }
+
+    .dashboard-meta .info strong {
+      color: var(--bleu-marine);
+      font-size: 1.05rem;
+    }
+
+    /* ===== KPI ===== */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .kpi-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,58,110,0.07);
+      border-left: 4px solid var(--bleu-clair);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card.success { border-left-color: var(--vert); }
+    .kpi-card.warning { border-left-color: var(--orange); }
+    .kpi-card.danger { border-left-color: var(--rouge); }
+    .kpi-card.info { border-left-color: var(--bleu-accent); }
+
+    .kpi-label {
+      font-size: 0.74rem;
+      color: var(--gris-fonce);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .kpi-value {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: var(--bleu-marine);
+      line-height: 1;
+    }
+
+    .kpi-card.success .kpi-value { color: var(--vert-fonce); }
+    .kpi-card.warning .kpi-value { color: var(--orange-fonce); }
+    .kpi-card.danger .kpi-value { color: var(--rouge-fonce); }
+
+    .kpi-sub {
+      font-size: 0.78rem;
+      color: var(--gris-fonce);
+      margin-top: 4px;
+    }
+
+    .kpi-pct {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-left: 4px;
+    }
+
+    /* ===== GRAPHIQUES ===== */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+
+    .chart-card {
+      background: white;
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: 0 2px 8px rgba(0,58,110,0.07);
+    }
+
+    .chart-card h3 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--bleu-marine);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--bleu-pale);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chart-card h3 .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--bleu-accent);
+    }
+
+    .chart-card.wide {
+      grid-column: 1 / -1;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 280px;
+    }
+
+    .chart-container.tall {
+      height: 360px;
+    }
+
+    /* ===== TOP CHANTIERS BARS ===== */
+    .ranking {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ranking-item {
+      display: grid;
+      grid-template-columns: 28px 1fr 50px;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 0;
+    }
+
+    .ranking-rank {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--bleu-marine);
+      text-align: center;
+    }
+
+    .ranking-rank.gold { color: var(--orange); }
+    .ranking-rank.silver { color: #909090; }
+    .ranking-rank.bronze { color: #B87333; }
+
+    .ranking-bar-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ranking-name {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--texte);
+    }
+
+    .ranking-bar {
+      height: 6px;
+      background: var(--gris-clair);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .ranking-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--bleu-clair), var(--bleu-accent));
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+
+    .ranking-value {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--bleu-marine);
+      text-align: right;
+    }
+
+    /* ===== ANALYSE IA ===== */
+    .ia-card {
+      background: linear-gradient(135deg, var(--bleu-marine) 0%, var(--bleu-clair) 100%);
+      color: white;
+      border-radius: 12px;
+      padding: 28px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ia-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -10%;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: rgba(45, 198, 83, 0.2);
+      pointer-events: none;
+    }
+
+    .ia-card h3 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.3rem;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .ia-card h3::before {
+      content: '✨';
+      font-size: 1.5rem;
+    }
+
+    .ia-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .ia-content h4 {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem;
+      letter-spacing: 1px;
+      margin: 16px 0 8px 0;
+      opacity: 0.9;
+      color: #B8E5FB;
+    }
+
+    .ia-content p, .ia-content li {
+      font-size: 0.94rem;
+      line-height: 1.6;
+      opacity: 0.95;
+    }
+
+    .ia-content ul {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .ia-loader {
+      text-align: center;
+      padding: 30px;
+      font-size: 0.95rem;
+      opacity: 0.9;
+    }
+
+    .ia-loader::after {
+      content: '...';
+      animation: dots 1.5s infinite;
+      display: inline-block;
+      width: 20px;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: ''; }
+      40% { content: '.'; }
+      60% { content: '..'; }
+      80%, 100% { content: '...'; }
+    }
+
+    /* ===== STATUTS ===== */
+    .statuts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+
+    .statut-pill {
+      display: flex;
+      flex-direction: column;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border-left: 3px solid;
+    }
+
+    .statut-pill.cloturee { background: #E8F5EC; border-color: var(--vert); }
+    .statut-pill.en-cours { background: #FFF6E8; border-color: var(--orange); }
+    .statut-pill.a-planifier { background: #FFF3CD; border-color: var(--jaune); }
+    .statut-pill.a-traiter { background: #FFE8EC; border-color: var(--rouge); }
+
+    .statut-pill .nom {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--gris-fonce);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .statut-pill .nb {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.7rem;
+      font-weight: 800;
+      color: var(--bleu-marine);
+      line-height: 1;
+      margin-top: 3px;
+    }
+
+    /* ===== HEATMAP ===== */
+    .heatmap {
+      overflow-x: auto;
+    }
+
+    .heatmap-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 2px;
+      font-size: 0.78rem;
+    }
+
+    .heatmap-table th {
+      background: var(--bleu-marine);
+      color: white;
+      padding: 6px 8px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 600;
+      text-align: center;
+      border-radius: 4px;
+    }
+
+    .heatmap-table th.chantier-th {
+      text-align: left;
+      width: 180px;
+    }
+
+    .heatmap-table td {
+      padding: 8px;
+      text-align: center;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    .heatmap-table td.label {
+      background: var(--gris-clair);
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
+
+    /* ===== BOUTONS ===== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-family: 'Barlow', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-export {
+      background: rgba(255,255,255,0.18);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.35);
+    }
+
+    .btn-export:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.12);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.25);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.22);
+    }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bleu-marine);
+      color: white;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      z-index: 9999;
+      opacity: 0;
+      transition: all 0.3s;
+      pointer-events: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.success { background: var(--vert-fonce); }
+    .toast.error { background: var(--rouge-fonce); }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .header-inner { flex-direction: column; gap: 12px; padding: 16px; }
+      .header-title-wrap h1 { font-size: 1.5rem; }
+      .upload-zone { padding: 0 14px; }
+      .upload-card { padding: 26px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-title-wrap">
+        <h1>DASHBOARD HSE</h1>
+        <p>Analyse intelligente du plan d'action chantiers</p>
+      </div>
+      <div class="header-actions" id="header-actions" style="display:none;">
+        <button class="btn btn-secondary" onclick="resetDashboard()">📂 Nouveau fichier</button>
+        <button class="btn btn-export" onclick="exportPNG()">📸 Exporter PNG</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ZONE UPLOAD -->
+  <div class="upload-zone" id="upload-zone">
+    <label class="upload-card" for="file-input">
+      <div class="icon">📊</div>
+      <h2>Charger votre PA chantiers</h2>
+      <p>Glissez-déposez ou cliquez pour sélectionner votre fichier <strong>PA_CHANTIERS.xlsx</strong></p>
+      <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none;">
+    </label>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+
+    <div class="dashboard-meta">
+      <div class="info">
+        <strong id="meta-onglet">2026</strong> · <span id="meta-nb-actions">0</span> actions · Période : <span id="meta-periode">—</span>
+      </div>
+      <div class="info">
+        Date d'analyse : <strong id="meta-date">—</strong>
+      </div>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <!-- ANALYSE IA -->
+    <div class="ia-card">
+      <h3>Analyse intelligente Groq AI</h3>
+      <div class="ia-content" id="ia-content">
+        <div class="ia-loader">Analyse en cours</div>
+      </div>
+    </div>
+
+    <!-- GRAPHIQUES -->
+    <div class="charts-grid">
+
+      <!-- Top chantiers -->
+      <div class="chart-card">
+        <h3><span class="dot"></span>Top chantiers</h3>
+        <div class="ranking" id="ranking-chantiers"></div>
+      </div>
+
+      <!-- Domaines -->
+      <div class="chart-card">
+        <h3><span class="dot"></span>Répartition par domaine</h3>
+        <div class="chart-container">
+          <canvas id="chart-domaines"></canvas>
+        </div>
+      </div>
+
+      <!-- Impacts -->
+      <div class="chart-card">
+        <h3><span class="dot"></span>Niveau d'impact HSE</h3>
+        <div class="chart-container">
+          <canvas id="chart-impacts"></canvas>
+        </div>
+      </div>
+
+      <!-- Évolution mensuelle -->
+      <div class="chart-card">
+        <h3><span class="dot"></span>Évolution mensuelle</h3>
+        <div class="chart-container">
+          <canvas id="chart-evolution"></canvas>
+        </div>
+      </div>
+
+      <!-- Statuts -->
+      <div class="chart-card wide">
+        <h3><span class="dot"></span>Statut des actions</h3>
+        <div class="statuts-grid" id="statuts-grid"></div>
+      </div>
+
+      <!-- Heatmap -->
+      <div class="chart-card wide">
+        <h3><span class="dot"></span>Heatmap chantier × mois</h3>
+        <div class="heatmap" id="heatmap"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const GROQ_API_KEY = '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';
+    const GROQ_MODEL = 'llama-3.3-70b-versatile';
+
+    let donneesGlobales = [];
+    let chartsInstances = {};
+
+    // ===== TOAST =====
+    function toast(msg, type='') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + type;
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // ===== UPLOAD =====
+    document.getElementById('file-input').addEventListener('change', handleFile);
+
+    const uploadCard = document.querySelector('.upload-card');
+    ['dragenter', 'dragover'].forEach(ev => uploadCard.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation();
+      uploadCard.style.borderColor = 'var(--bleu-accent)';
+      uploadCard.style.background = 'var(--bleu-pale)';
+    }));
+    ['dragleave', 'drop'].forEach(ev => uploadCard.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation();
+      uploadCard.style.borderColor = '';
+      uploadCard.style.background = '';
+    }));
+    uploadCard.addEventListener('drop', e => {
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file);
+    });
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (file) processFile(file);
+    }
+
+    function processFile(file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+
+          // Trouver l'onglet le plus récent (2026 par défaut, sinon le plus récent)
+          let targetSheet = '2026';
+          if (!wb.SheetNames.includes('2026')) {
+            // Prendre le plus récent
+            const annees = wb.SheetNames.filter(n => /^\d{4}$/.test(n)).sort();
+            targetSheet = annees[annees.length - 1] || wb.SheetNames[0];
+          }
+
+          const ws = wb.Sheets[targetSheet];
+          const rawData = XLSX.utils.sheet_to_json(ws, { range: 1, defval: '' });
+
+          if (rawData.length === 0) {
+            toast('Aucune donnée trouvée dans l\'onglet ' + targetSheet, 'error');
+            return;
+          }
+
+          // Normaliser les colonnes
+          donneesGlobales = rawData.map(row => {
+            const r = {};
+            for (const key in row) {
+              const k = key.toLowerCase().trim();
+              if (k.includes('chantier')) r.chantier = row[key];
+              else if (k.includes('date d\'ajout') || k === 'date') r.date_ajout = row[key];
+              else if (k === 'mois') r.mois = row[key];
+              else if (k.includes('observation')) r.observation = row[key];
+              else if (k === 'domaine') r.domaine = row[key];
+              else if (k.includes('impact')) r.impact = row[key];
+              else if (k.includes('transver')) r.transversal = row[key];
+              else if (k.includes('délai') || k.includes('delai')) r.delai = row[key];
+              else if (k.includes('action correct')) r.action = row[key];
+              else if (k === 'statut') r.statut = row[key];
+              else if (k.includes('réalis')) r.realisation = row[key];
+              else if (k.includes('clôture') || k.includes('cloture')) r.date_cloture = row[key];
+              else if (k.includes('report')) r.report_pa = row[key];
+            }
+            return r;
+          }).filter(r => r.chantier);
+
+          document.getElementById('meta-onglet').textContent = targetSheet;
+          renderDashboard();
+        } catch (err) {
+          console.error(err);
+          toast('Erreur lors de la lecture du fichier', 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // ===== RENDER DASHBOARD =====
+    function renderDashboard() {
+      document.getElementById('upload-zone').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      document.getElementById('header-actions').style.display = 'flex';
+
+      document.getElementById('meta-nb-actions').textContent = donneesGlobales.length;
+      document.getElementById('meta-date').textContent = new Date().toLocaleDateString('fr-FR');
+
+      // Période
+      const dates = donneesGlobales.map(d => d.date_ajout).filter(Boolean);
+      if (dates.length > 0) {
+        const dateStr = (d) => {
+          if (d instanceof Date) return d.toLocaleDateString('fr-FR');
+          return String(d).split(' ')[0];
+        };
+        document.getElementById('meta-periode').textContent =
+          dateStr(dates[0]) + ' → ' + dateStr(dates[dates.length-1]);
+      }
+
+      renderKPI();
+      renderStatuts();
+      renderTopChantiers();
+      renderChartDomaines();
+      renderChartImpacts();
+      renderChartEvolution();
+      renderHeatmap();
+      analyserIA();
+    }
+
+    // ===== KPI =====
+    function renderKPI() {
+      const total = donneesGlobales.length;
+      const cloturees = donneesGlobales.filter(d => normStatut(d.statut) === 'Clôturée').length;
+      const enCours = donneesGlobales.filter(d => normStatut(d.statut) === 'En cours').length;
+      const aTraiter = donneesGlobales.filter(d => ['A planifier', 'A traiter'].includes(normStatut(d.statut))).length;
+      const critique = donneesGlobales.filter(d => d.impact === 'Critique' || d.impact === 'Fort').length;
+      const transversaux = donneesGlobales.filter(d => d.transversal === 'Oui').length;
+      const tauxCloture = total > 0 ? Math.round(cloturees / total * 100) : 0;
+
+      const kpis = [
+        { label: 'Total actions', value: total, sub: 'Identifiées sur la période', class: 'info' },
+        { label: 'Clôturées', value: cloturees, sub: tauxCloture + '% du total', class: 'success', pct: tauxCloture },
+        { label: 'En cours', value: enCours, sub: 'Actions actives', class: 'warning' },
+        { label: 'À traiter', value: aTraiter, sub: 'Actions non démarrées', class: 'danger' },
+        { label: 'Risques élevés', value: critique, sub: 'Impact Critique ou Fort', class: 'danger' },
+        { label: 'Transversales', value: transversaux, sub: 'Concernent plusieurs chantiers', class: 'info' }
+      ];
+
+      document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+        <div class="kpi-card ${k.class}">
+          <div class="kpi-label">${k.label}</div>
+          <div class="kpi-value">${k.value}${k.pct !== undefined ? '<span class="kpi-pct">' + k.pct + '%</span>' : ''}</div>
+          <div class="kpi-sub">${k.sub}</div>
+        </div>
+      `).join('');
+    }
+
+    function normStatut(s) {
+      if (!s) return '';
+      const v = String(s).trim();
+      if (/cl[oô]tur/i.test(v)) return 'Clôturée';
+      if (/en cours/i.test(v)) return 'En cours';
+      if (/planif/i.test(v)) return 'A planifier';
+      if (/traiter/i.test(v)) return 'A traiter';
+      return v;
+    }
+
+    // ===== STATUTS =====
+    function renderStatuts() {
+      const cnt = { 'Clôturée': 0, 'En cours': 0, 'A planifier': 0, 'A traiter': 0 };
+      donneesGlobales.forEach(d => {
+        const s = normStatut(d.statut);
+        if (cnt[s] !== undefined) cnt[s]++;
+      });
+      const html = Object.entries(cnt).map(([nom, nb]) => {
+        const cls = nom === 'Clôturée' ? 'cloturee' :
+                    nom === 'En cours' ? 'en-cours' :
+                    nom === 'A planifier' ? 'a-planifier' : 'a-traiter';
+        return `<div class="statut-pill ${cls}"><span class="nom">${nom}</span><span class="nb">${nb}</span></div>`;
+      }).join('');
+      document.getElementById('statuts-grid').innerHTML = html;
+    }
+
+    // ===== TOP CHANTIERS =====
+    function renderTopChantiers() {
+      const cnt = {};
+      donneesGlobales.forEach(d => {
+        const c = d.chantier || 'Non spécifié';
+        cnt[c] = (cnt[c] || 0) + 1;
+      });
+      const top = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0, 10);
+      const max = top[0] ? top[0][1] : 1;
+
+      document.getElementById('ranking-chantiers').innerHTML = top.map(([nom, nb], i) => {
+        const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+        const pct = (nb / max * 100).toFixed(0);
+        return `
+          <div class="ranking-item">
+            <span class="ranking-rank ${rankClass}">${i+1}</span>
+            <div class="ranking-bar-wrap">
+              <span class="ranking-name">${nom}</span>
+              <div class="ranking-bar"><div class="ranking-bar-fill" style="width:${pct}%"></div></div>
+            </div>
+            <span class="ranking-value">${nb}</span>
+          </div>`;
+      }).join('');
+    }
+
+    // ===== CHART DOMAINES =====
+    function renderChartDomaines() {
+      const cnt = {};
+      donneesGlobales.forEach(d => {
+        const dom = d.domaine || 'Non spécifié';
+        cnt[dom] = (cnt[dom] || 0) + 1;
+      });
+      const colors = {
+        'Sécurité': '#E63946',
+        'Santé': '#0077B6',
+        'Environnement': '#2DC653',
+        'Réglementaire': '#F4A03A',
+        'Non spécifié': '#888'
+      };
+      destroyChart('chart-domaines');
+      const ctx = document.getElementById('chart-domaines');
+      chartsInstances['chart-domaines'] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(cnt),
+          datasets: [{
+            data: Object.values(cnt),
+            backgroundColor: Object.keys(cnt).map(k => colors[k] || '#888'),
+            borderWidth: 0,
+            hoverOffset: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { font: { family: 'Barlow', size: 13 }, padding: 12 }
+            }
+          },
+          cutout: '60%'
+        }
+      });
+    }
+
+    // ===== CHART IMPACTS =====
+    function renderChartImpacts() {
+      const cnt = { 'Critique': 0, 'Fort': 0, 'Moyen': 0, 'Faible': 0 };
+      donneesGlobales.forEach(d => {
+        if (cnt[d.impact] !== undefined) cnt[d.impact]++;
+      });
+      destroyChart('chart-impacts');
+      const ctx = document.getElementById('chart-impacts');
+      chartsInstances['chart-impacts'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(cnt),
+          datasets: [{
+            data: Object.values(cnt),
+            backgroundColor: ['#B82531', '#E63946', '#F4A03A', '#FFC93C'],
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { font: { family: 'Barlow' }, precision: 0 } },
+            x: { ticks: { font: { family: 'Barlow', size: 13 } } }
+          }
+        }
+      });
+    }
+
+    // ===== CHART EVOLUTION =====
+    function renderChartEvolution() {
+      const moisCnt = {};
+      donneesGlobales.forEach(d => {
+        let date = d.date_ajout;
+        if (!date) return;
+        if (typeof date === 'string') date = new Date(date);
+        if (!(date instanceof Date) || isNaN(date)) return;
+        const key = date.toISOString().slice(0, 7);
+        moisCnt[key] = (moisCnt[key] || 0) + 1;
+      });
+      const sorted = Object.entries(moisCnt).sort();
+      const labels = sorted.map(([k]) => {
+        const [y, m] = k.split('-');
+        const months = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc'];
+        return months[parseInt(m)-1] + ' ' + y;
+      });
+
+      destroyChart('chart-evolution');
+      const ctx = document.getElementById('chart-evolution');
+      chartsInstances['chart-evolution'] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Actions',
+            data: sorted.map(s=>s[1]),
+            borderColor: '#0077B6',
+            backgroundColor: 'rgba(0, 119, 182, 0.1)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 3,
+            pointBackgroundColor: '#003A6E',
+            pointRadius: 5,
+            pointHoverRadius: 7
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { font: { family: 'Barlow' }, precision: 0 } },
+            x: { ticks: { font: { family: 'Barlow', size: 11 } } }
+          }
+        }
+      });
+    }
+
+    // ===== HEATMAP =====
+    function renderHeatmap() {
+      const topChantiers = Object.entries(
+        donneesGlobales.reduce((acc, d) => {
+          const c = d.chantier || 'N/A';
+          acc[c] = (acc[c] || 0) + 1;
+          return acc;
+        }, {})
+      ).sort((a,b)=>b[1]-a[1]).slice(0, 8).map(e=>e[0]);
+
+      const moisDispo = [...new Set(donneesGlobales.map(d => {
+        let date = d.date_ajout;
+        if (!date) return null;
+        if (typeof date === 'string') date = new Date(date);
+        if (!(date instanceof Date) || isNaN(date)) return null;
+        return date.getMonth();
+      }).filter(m => m !== null))].sort((a,b)=>a-b);
+
+      const moisNames = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc'];
+
+      let html = '<table class="heatmap-table"><thead><tr><th class="chantier-th">Chantier</th>';
+      moisDispo.forEach(m => {
+        html += `<th>${moisNames[m]}</th>`;
+      });
+      html += '<th>Total</th></tr></thead><tbody>';
+
+      let maxVal = 0;
+      const counts = {};
+      topChantiers.forEach(c => {
+        counts[c] = {};
+        moisDispo.forEach(m => counts[c][m] = 0);
+      });
+      donneesGlobales.forEach(d => {
+        const c = d.chantier || 'N/A';
+        if (!topChantiers.includes(c)) return;
+        let date = d.date_ajout;
+        if (typeof date === 'string') date = new Date(date);
+        if (!(date instanceof Date) || isNaN(date)) return;
+        const m = date.getMonth();
+        if (counts[c][m] !== undefined) {
+          counts[c][m]++;
+          if (counts[c][m] > maxVal) maxVal = counts[c][m];
+        }
+      });
+
+      topChantiers.forEach(c => {
+        html += `<tr><td class="label">${c}</td>`;
+        let total = 0;
+        moisDispo.forEach(m => {
+          const v = counts[c][m];
+          total += v;
+          const intensity = maxVal > 0 ? v / maxVal : 0;
+          const bg = v === 0 ? '#f0f0f0' :
+                     `rgba(0, 119, 182, ${0.2 + intensity * 0.7})`;
+          const color = intensity > 0.5 ? 'white' : '#003A6E';
+          html += `<td style="background:${bg};color:${color}">${v || ''}</td>`;
+        });
+        html += `<td style="background:#003A6E;color:white">${total}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('heatmap').innerHTML = html;
+    }
+
+    function destroyChart(id) {
+      if (chartsInstances[id]) chartsInstances[id].destroy();
+    }
+
+    // ===== ANALYSE IA GROQ =====
+    async function analyserIA() {
+      const content = document.getElementById('ia-content');
+      content.innerHTML = '<div class="ia-loader">Analyse en cours</div>';
+
+      // Préparer la synthèse des données pour l'IA
+      const synthese = preparerSyntheseIA();
+
+      const prompt = `Tu es un consultant HSE expert. Voici une synthèse des observations HSE d'une entreprise de dragage et travaux fluviaux pour l'année courante.
+
+DONNÉES :
+${synthese}
+
+Produis une analyse structurée en français en format markdown avec ces 4 sections :
+
+## Points clés
+2-3 phrases sur la situation globale, le taux de clôture, les tendances majeures.
+
+## Risques récurrents identifiés
+Liste à puces (3 à 5 items max) des types d'écarts ou de chantiers qui reviennent le plus souvent et qui méritent attention.
+
+## Recommandations d'actions transversales
+Liste à puces (3 à 5 items max) d'actions concrètes que l'entreprise pourrait mener pour traiter les causes profondes.
+
+## Indicateurs à surveiller
+2-3 indicateurs précis à mettre sous contrôle.
+
+Sois concis, factuel, orienté action. Pas de blabla.`;
+
+      try {
+        const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + GROQ_API_KEY
+          },
+          body: JSON.stringify({
+            model: GROQ_MODEL,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.4,
+            max_tokens: 900
+          })
+        });
+        const data = await resp.json();
+        if (!data.choices || !data.choices[0]) throw new Error('IA non disponible');
+        const texte = data.choices[0].message.content;
+        content.innerHTML = renderMarkdown(texte);
+      } catch (e) {
+        console.error(e);
+        content.innerHTML = '<p>⚠️ Analyse IA temporairement indisponible. Les statistiques restent disponibles ci-dessous.</p>';
+      }
+    }
+
+    function preparerSyntheseIA() {
+      const total = donneesGlobales.length;
+      const cloturees = donneesGlobales.filter(d => normStatut(d.statut) === 'Clôturée').length;
+      const cnt = (key) => {
+        const c = {};
+        donneesGlobales.forEach(d => {
+          const v = d[key] || 'N/A';
+          c[v] = (c[v] || 0) + 1;
+        });
+        return Object.entries(c).sort((a,b)=>b[1]-a[1]);
+      };
+
+      const topChantiers = cnt('chantier').slice(0, 8).map(([n,v]) => `${n}: ${v}`).join(', ');
+      const topDomaines = cnt('domaine').map(([n,v]) => `${n}: ${v}`).join(', ');
+      const topImpacts = cnt('impact').map(([n,v]) => `${n}: ${v}`).join(', ');
+
+      // Quelques observations clés (les plus critiques non clôturées)
+      const critiques = donneesGlobales
+        .filter(d => ['Critique','Fort'].includes(d.impact) && normStatut(d.statut) !== 'Clôturée')
+        .slice(0, 10)
+        .map(d => `[${d.chantier}] ${d.observation || ''}`.substring(0, 150));
+
+      return `
+Total : ${total} actions HSE (${cloturees} clôturées soit ${Math.round(cloturees/total*100)}%)
+Top chantiers : ${topChantiers}
+Répartition par domaine : ${topDomaines}
+Niveau d'impact : ${topImpacts}
+
+Observations à fort impact non encore clôturées :
+${critiques.join('\n')}
+      `.trim();
+    }
+
+    function renderMarkdown(text) {
+      // Mini markdown renderer
+      let html = text
+        .replace(/^## (.+)$/gm, '<h4>$1</h4>')
+        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>');
+
+      // Wrapper <ul> autour des <li> consécutifs
+      html = html.replace(/(<li>.*?<\/li>(\n)?)+/gs, m => '<ul>' + m + '</ul>');
+      // Paragraphes pour le reste
+      html = html.split('\n\n').map(p => {
+        if (p.startsWith('<') || p.trim() === '') return p;
+        return '<p>' + p + '</p>';
+      }).join('\n');
+      return html;
+    }
+
+    // ===== EXPORT PNG =====
+    function exportPNG() {
+      toast('Génération de l\'image...');
+      const dashboard = document.getElementById('dashboard');
+      html2canvas(dashboard, {
+        scale: 2,
+        backgroundColor: '#F5F7FA',
+        useCORS: true
+      }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = 'Dashboard_HSE_' + new Date().toISOString().slice(0,10) + '.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        toast('✅ Image téléchargée', 'success');
+      }).catch(err => {
+        console.error(err);
+        toast('Erreur lors de l\'export', 'error');
+      });
+    }
+
+    // ===== RESET =====
+    function resetDashboard() {
+      document.getElementById('upload-zone').style.display = 'block';
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('header-actions').style.display = 'none';
+      document.getElementById('file-input').value = '';
+      donneesGlobales = [];
+      Object.values(chartsInstances).forEach(c => c.destroy());
+      chartsInstances = {};
+    }
+  </script>
+
+</body>
+</html>
