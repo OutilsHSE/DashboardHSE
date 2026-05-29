@@ -8,6 +8,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     :root {
       --bleu-marine: #003A6E;
@@ -733,6 +735,13 @@
         <div class="keywords-cloud" id="keywords-cloud"></div>
       </div>
 
+      <!-- Cartographie des chantiers -->
+      <div class="chart-card wide">
+        <h3><span class="dot"></span>Cartographie des chantiers</h3>
+        <div id="map-chantiers" style="height: 500px; border-radius: 8px;"></div>
+        <div id="map-legend" style="margin-top: 12px; font-size: 0.85rem; color: var(--gris-fonce);"></div>
+      </div>
+
     </div>
 
   </div>
@@ -862,7 +871,173 @@
       renderHeatmap();
       renderMatriceStatutDomaine();
       renderKeywords();
+      renderCarte();
       analyserIA();
+    }
+
+    // ===== CARTOGRAPHIE DES CHANTIERS =====
+    // Table de correspondance manuelle pour les noms internes
+    const CHANTIER_LOCATIONS = {
+      'ATELIER': { lat: 48.9559, lon: 3.0286, ville: 'Luzancy (77)' },
+      'Cour Extérieure Atelier': { lat: 48.9559, lon: 3.0286, ville: 'Luzancy (77)' },
+      'TEREOS': { lat: 49.8378, lon: 3.4942, ville: 'Origny-Sainte-Benoite (02)' },
+      'Atelier Degaie EP': { lat: 50.3022, lon: 3.9119, ville: 'Pont-sur-Sambre (59)' },
+      'Bateau Le Lem': { lat: 48.9332, lon: 2.3030, ville: 'Gennevilliers (92)' },
+      'Atelier DEGAIE / Ostende': { lat: 51.2247, lon: 2.9197, ville: 'Ostende (Belgique)' },
+      'Dragage Mayenne': { lat: 48.3061, lon: -0.6178, ville: 'Mayenne (53)' },
+      'Dragage Sarthe': { lat: 47.9960, lon: 0.1996, ville: 'Sarthe (72)' },
+      'RCE Jouy sur Morin': { lat: 48.8128, lon: 3.2725, ville: 'Jouy-sur-Morin (77)' },
+      'Bassin des Moulinets Eaubonne': { lat: 48.9908, lon: 2.2811, ville: 'Eaubonne (95)' }
+    };
+
+    let mapInstance = null;
+
+    async function renderCarte() {
+      // Compter par chantier
+      const cnt = {};
+      donneesGlobales.forEach(d => {
+        const c = d.chantier || 'Non spécifié';
+        cnt[c] = (cnt[c] || 0) + 1;
+      });
+
+      // Initialiser ou réutiliser la carte
+      if (mapInstance) {
+        mapInstance.remove();
+      }
+
+      mapInstance = L.map('map-chantiers').setView([48.5, 2.5], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 18
+      }).addTo(mapInstance);
+
+      // Pour chaque chantier, géocoder ou utiliser la table
+      const chantiersGeocodes = [];
+      const chantiersNonLocalises = [];
+
+      for (const [nom, nb] of Object.entries(cnt)) {
+        let coords = CHANTIER_LOCATIONS[nom];
+
+        if (!coords) {
+          // Tentative de géocodage via API publique française
+          coords = await geocoderChantier(nom);
+        }
+
+        if (coords) {
+          chantiersGeocodes.push({ nom, nb, ...coords });
+        } else {
+          chantiersNonLocalises.push({ nom, nb });
+        }
+      }
+
+      // Trouver max pour dimensionner les marqueurs
+      const maxNb = Math.max(...chantiersGeocodes.map(c => c.nb), 1);
+
+      // Ajouter les marqueurs
+      const bounds = [];
+      chantiersGeocodes.forEach(c => {
+        const ratio = c.nb / maxNb;
+        const radius = 10 + ratio * 30; // 10 à 40px
+        const color = ratio > 0.6 ? '#E63946' : ratio > 0.3 ? '#F4A03A' : '#0077B6';
+
+        // Statistiques par chantier
+        const cloturees = donneesGlobales.filter(d => d.chantier === c.nom && normStatut(d.statut) === 'Clôturée').length;
+        const enRetard = donneesGlobales.filter(d => {
+          if (d.chantier !== c.nom) return false;
+          if (normStatut(d.statut) === 'Clôturée') return false;
+          let de = d.date_cloture || d.echeance;
+          if (!de) return false;
+          if (typeof de === 'string') de = new Date(de);
+          return de instanceof Date && !isNaN(de) && de < new Date();
+        }).length;
+
+        const popupHtml = `
+          <div style="font-family:Barlow,sans-serif;min-width:200px">
+            <h4 style="margin:0 0 6px 0;color:#003A6E;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem">${c.nom}</h4>
+            <p style="margin:0 0 8px 0;color:#5A6B82;font-size:0.85rem">${c.ville}</p>
+            <div style="font-size:0.88rem;line-height:1.5">
+              <strong>${c.nb}</strong> action${c.nb>1?'s':''} HSE<br>
+              ✓ ${cloturees} clôturée${cloturees>1?'s':''}<br>
+              ${enRetard > 0 ? '⚠️ <span style="color:#E63946"><strong>' + enRetard + ' en retard</strong></span>' : ''}
+            </div>
+          </div>
+        `;
+
+        L.circleMarker([c.lat, c.lon], {
+          radius: radius,
+          fillColor: color,
+          color: 'white',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.7
+        })
+          .addTo(mapInstance)
+          .bindPopup(popupHtml);
+
+        // Label avec le nombre
+        L.marker([c.lat, c.lon], {
+          icon: L.divIcon({
+            className: 'map-count-label',
+            html: '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:800;color:white;font-size:' + (12 + ratio * 6) + 'px;text-align:center;line-height:' + (radius*2) + 'px;width:' + (radius*2) + 'px;height:' + (radius*2) + 'px;text-shadow:0 1px 2px rgba(0,0,0,0.4);pointer-events:none;">' + c.nb + '</div>',
+            iconSize: [radius*2, radius*2],
+            iconAnchor: [radius, radius]
+          })
+        }).addTo(mapInstance);
+
+        bounds.push([c.lat, c.lon]);
+      });
+
+      // Ajuster le zoom
+      if (bounds.length > 0) {
+        mapInstance.fitBounds(bounds, { padding: [50, 50] });
+      }
+
+      // Légende
+      const legendHtml = `
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#E63946"></span> Très actif</div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#F4A03A"></span> Modérément actif</div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#0077B6"></span> Peu actif</div>
+          ${chantiersNonLocalises.length > 0 ? '<div style="color:#888">⚠️ ' + chantiersNonLocalises.length + ' chantier(s) non localisé(s) : ' + chantiersNonLocalises.map(c=>c.nom).join(', ') + '</div>' : ''}
+        </div>
+      `;
+      document.getElementById('map-legend').innerHTML = legendHtml;
+    }
+
+    // Cache des géocodages pour éviter les appels répétés
+    const geocodeCache = {};
+
+    async function geocoderChantier(nom) {
+      if (geocodeCache[nom] !== undefined) return geocodeCache[nom];
+
+      // Extraire la partie "lieu" du nom (ex: "Dragage Mayenne" → "Mayenne")
+      const motsCles = nom
+        .replace(/dragage|arrachage|faucardage|atelier|bateau|bassin|rce|tereos/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (motsCles.length < 3) {
+        geocodeCache[nom] = null;
+        return null;
+      }
+
+      try {
+        const url = 'https://api-adresse.data.gouv.fr/search/?q=' + encodeURIComponent(motsCles) + '&limit=1';
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.features && data.features.length > 0) {
+          const f = data.features[0];
+          const [lon, lat] = f.geometry.coordinates;
+          const result = { lat, lon, ville: f.properties.label };
+          geocodeCache[nom] = result;
+          return result;
+        }
+      } catch (e) {
+        console.error('Erreur geocoding', nom, e);
+      }
+
+      geocodeCache[nom] = null;
+      return null;
     }
 
     // ===== MATRICE STATUT × DOMAINE =====
