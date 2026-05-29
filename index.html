@@ -536,6 +536,62 @@
       background: rgba(255,255,255,0.22);
     }
 
+    /* ===== MOTS-CLÉS ===== */
+    .keywords-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+    }
+
+    .keyword-pill {
+      background: var(--bleu-pale);
+      color: var(--bleu-marine);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: 600;
+      border: 1px solid var(--gris-bord);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.15s;
+    }
+
+    .keyword-pill:hover {
+      transform: scale(1.05);
+    }
+
+    .keyword-pill .count-badge {
+      background: var(--bleu-marine);
+      color: white;
+      font-size: 0.72rem;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+
+    .keyword-pill.large {
+      font-size: 1.05rem;
+      background: linear-gradient(135deg, var(--bleu-clair), var(--bleu-accent));
+      color: white;
+    }
+
+    .keyword-pill.large .count-badge {
+      background: white;
+      color: var(--bleu-marine);
+    }
+
+    .keyword-pill.medium {
+      font-size: 0.95rem;
+      background: var(--bleu-pale);
+    }
+
+    .keyword-pill.small {
+      font-size: 0.85rem;
+      opacity: 0.85;
+    }
+
     /* ===== TOAST ===== */
     .toast {
       position: fixed;
@@ -665,6 +721,18 @@
         <div class="heatmap" id="heatmap"></div>
       </div>
 
+      <!-- Matrice Statut × Domaine (pour MASE) -->
+      <div class="chart-card wide">
+        <h3><span class="dot"></span>Matrice Statut × Domaine (MASE)</h3>
+        <div class="heatmap" id="matrice-statut-domaine"></div>
+      </div>
+
+      <!-- Mots-clés fréquents -->
+      <div class="chart-card wide">
+        <h3><span class="dot"></span>Mots-clés fréquents dans les observations</h3>
+        <div class="keywords-cloud" id="keywords-cloud"></div>
+      </div>
+
     </div>
 
   </div>
@@ -792,7 +860,153 @@
       renderChartImpacts();
       renderChartEvolution();
       renderHeatmap();
+      renderMatriceStatutDomaine();
+      renderKeywords();
       analyserIA();
+    }
+
+    // ===== MATRICE STATUT × DOMAINE =====
+    function renderMatriceStatutDomaine() {
+      const statuts = ['Clôturée', 'En cours', 'A planifier', 'A traiter'];
+      const domaines = ['Sécurité', 'Santé', 'Environnement', 'Réglementaire'];
+
+      // Compter
+      const matrix = {};
+      domaines.forEach(d => {
+        matrix[d] = {};
+        statuts.forEach(s => matrix[d][s] = 0);
+      });
+
+      donneesGlobales.forEach(item => {
+        const dom = item.domaine;
+        const st = normStatut(item.statut);
+        if (matrix[dom] && matrix[dom][st] !== undefined) {
+          matrix[dom][st]++;
+        }
+      });
+
+      // Trouver le max pour normaliser les couleurs
+      let maxVal = 0;
+      domaines.forEach(d => statuts.forEach(s => {
+        if (matrix[d][s] > maxVal) maxVal = matrix[d][s];
+      }));
+
+      // Construire le HTML
+      let html = '<table class="heatmap-table"><thead><tr><th class="chantier-th">Domaine ↓ / Statut →</th>';
+      statuts.forEach(s => html += `<th>${s}</th>`);
+      html += '<th>Total</th></tr></thead><tbody>';
+
+      // Couleurs par domaine pour la colonne label
+      const domColors = {
+        'Sécurité': '#E63946',
+        'Santé': '#0077B6',
+        'Environnement': '#2DC653',
+        'Réglementaire': '#F4A03A'
+      };
+
+      domaines.forEach(d => {
+        let total = 0;
+        html += `<tr><td class="label" style="border-left: 4px solid ${domColors[d]}">${d}</td>`;
+        statuts.forEach(s => {
+          const v = matrix[d][s];
+          total += v;
+          const intensity = maxVal > 0 ? v / maxVal : 0;
+          // Couleurs selon statut
+          let bg = '#f0f0f0';
+          if (v > 0) {
+            if (s === 'Clôturée') bg = `rgba(45, 198, 83, ${0.2 + intensity * 0.7})`;
+            else if (s === 'En cours') bg = `rgba(244, 160, 58, ${0.2 + intensity * 0.7})`;
+            else if (s === 'A planifier') bg = `rgba(255, 201, 60, ${0.2 + intensity * 0.7})`;
+            else bg = `rgba(230, 57, 70, ${0.2 + intensity * 0.7})`;
+          }
+          const color = intensity > 0.5 ? 'white' : '#003A6E';
+          html += `<td style="background:${bg};color:${color}">${v || ''}</td>`;
+        });
+        html += `<td style="background:#003A6E;color:white">${total}</td></tr>`;
+      });
+
+      // Ligne total
+      html += '<tr><td class="label" style="background:#003A6E;color:white"><strong>Total</strong></td>';
+      let grandTotal = 0;
+      statuts.forEach(s => {
+        let colTotal = 0;
+        domaines.forEach(d => colTotal += matrix[d][s]);
+        grandTotal += colTotal;
+        html += `<td style="background:#003A6E;color:white"><strong>${colTotal}</strong></td>`;
+      });
+      html += `<td style="background:#003A6E;color:white"><strong>${grandTotal}</strong></td></tr>`;
+
+      html += '</tbody></table>';
+      document.getElementById('matrice-statut-domaine').innerHTML = html;
+    }
+
+    // ===== MOTS-CLÉS =====
+    function renderKeywords() {
+      // Mots vides à ignorer
+      const stopwords = new Set([
+        'le','la','les','un','une','des','de','du','à','au','aux','et','ou','en','dans','sur','pour','par','avec','sans','que','qui','quoi','dont','où','ce','ces','cette','cet','son','sa','ses','leur','leurs','mon','ma','mes','ton','ta','tes','notre','votre','nos','vos','est','sont','être','avoir','a','ont','ne','pas','plus','moins','très','trop','tous','tout','toute','toutes','aussi','alors','si','car','mais','donc','d','l','c','s','n','m','t','y','j','qu','jusqu','lorsque','quand','comme','même','aussi','déjà','encore','toujours','jamais','souvent','peut','peuvent','doit','doivent','faire','fait','faits','être','avoir','fauait','existant','etc','via','lors','pendant','avant','après'
+      ]);
+
+      // Termes HSE pertinents à booster (synonymes regroupés)
+      const termsHSE = {
+        'EPI': ['epi', 'casque', 'gants', 'chaussures', 'lunettes', 'harnais', 'gilet'],
+        'Balisage': ['balisage', 'panneau', 'signalisation', 'panneaux', 'signalétique'],
+        'Formation': ['formation', 'sensibilisation', 'recyclage', 'habilitation', 'former'],
+        'Levage': ['levage', 'élingue', 'grue', 'hardware', 'manutention', 'sangle'],
+        'Échelle': ['échelle', 'escabeau', 'plateforme'],
+        'Engin': ['engin', 'pelle', 'pelleteuse', 'tracteur', 'véhicule'],
+        'Bateau': ['bateau', 'ponton', 'embarcation', 'navire'],
+        'Sécurité': ['sécurité', 'consigne', 'procédure', 'règle'],
+        'Pollution': ['pollution', 'déchet', 'hydrocarbure', 'huile'],
+        'Incendie': ['incendie', 'feu', 'extincteur'],
+        'Électrique': ['électrique', 'tension', 'cable', 'câble'],
+        'Hauteur': ['hauteur', 'chute', 'altitude'],
+        'Bruit': ['bruit', 'sonore', 'décibel'],
+        'Premiers secours': ['secours', 'trousse', 'défibrillateur', 'dae'],
+        'Document': ['document', 'consigne', 'fiche', 'plan', 'pictogramme'],
+        'Marche/Circulation': ['piéton', 'circulation', 'voie', 'allée', 'passage'],
+        'VGP': ['vgp', 'vérification', 'contrôle', 'inspection'],
+        'Coactivité': ['coactivité', 'co-activité', 'co activité'],
+        'Stockage': ['stockage', 'rangement', 'zone', 'entreposage']
+      };
+
+      // Compter occurrences (recherche insensible à la casse, mots entiers)
+      const counts = {};
+      Object.keys(termsHSE).forEach(k => counts[k] = 0);
+
+      donneesGlobales.forEach(d => {
+        const texte = ((d.observation || '') + ' ' + (d.action || '')).toLowerCase();
+        Object.entries(termsHSE).forEach(([categorie, mots]) => {
+          for (const mot of mots) {
+            // Regex pour mot entier (avec ponctuation flexible)
+            const regex = new RegExp('\\b' + mot.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '\\w*\\b', 'i');
+            if (regex.test(texte)) {
+              counts[categorie]++;
+              break; // Une seule fois par observation
+            }
+          }
+        });
+      });
+
+      // Top 15
+      const top = Object.entries(counts)
+        .filter(([k,v]) => v > 0)
+        .sort((a,b) => b[1] - a[1])
+        .slice(0, 15);
+
+      if (top.length === 0) {
+        document.getElementById('keywords-cloud').innerHTML = '<p style="color:#888">Aucun mot-clé HSE détecté</p>';
+        return;
+      }
+
+      const maxC = top[0][1];
+      const html = top.map(([mot, nb]) => {
+        const ratio = nb / maxC;
+        const size = ratio > 0.7 ? 'large' : ratio > 0.4 ? 'medium' : 'small';
+        return `<span class="keyword-pill ${size}">${mot} <span class="count-badge">${nb}</span></span>`;
+      }).join('');
+
+      document.getElementById('keywords-cloud').innerHTML = html;
     }
 
     // ===== KPI =====
@@ -805,13 +1019,25 @@
       const transversaux = donneesGlobales.filter(d => d.transversal === 'Oui').length;
       const tauxCloture = total > 0 ? Math.round(cloturees / total * 100) : 0;
 
+      // Actions en retard : échéance dépassée ET statut ≠ Clôturée
+      const aujourd = new Date();
+      const enRetard = donneesGlobales.filter(d => {
+        if (normStatut(d.statut) === 'Clôturée') return false;
+        let dateEch = d.date_cloture || d.echeance;
+        if (!dateEch) return false;
+        if (typeof dateEch === 'string') dateEch = new Date(dateEch);
+        if (!(dateEch instanceof Date) || isNaN(dateEch)) return false;
+        return dateEch < aujourd;
+      }).length;
+
       const kpis = [
         { label: 'Total actions', value: total, sub: 'Identifiées sur la période', class: 'info' },
         { label: 'Clôturées', value: cloturees, sub: tauxCloture + '% du total', class: 'success', pct: tauxCloture },
         { label: 'En cours', value: enCours, sub: 'Actions actives', class: 'warning' },
         { label: 'À traiter', value: aTraiter, sub: 'Actions non démarrées', class: 'danger' },
+        { label: 'En retard ⚠️', value: enRetard, sub: 'Échéance dépassée', class: 'danger' },
         { label: 'Risques élevés', value: critique, sub: 'Impact Critique ou Fort', class: 'danger' },
-        { label: 'Transversales', value: transversaux, sub: 'Concernent plusieurs chantiers', class: 'info' }
+        { label: 'Transversales', value: transversaux, sub: 'Plusieurs chantiers', class: 'info' }
       ];
 
       document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
@@ -881,6 +1107,7 @@
         const dom = d.domaine || 'Non spécifié';
         cnt[dom] = (cnt[dom] || 0) + 1;
       });
+      const total = Object.values(cnt).reduce((a,b)=>a+b, 0);
       const colors = {
         'Sécurité': '#E63946',
         'Santé': '#0077B6',
@@ -907,11 +1134,60 @@
           plugins: {
             legend: {
               position: 'right',
-              labels: { font: { family: 'Barlow', size: 13 }, padding: 12 }
+              labels: {
+                font: { family: 'Barlow', size: 13 },
+                padding: 12,
+                generateLabels: function(chart) {
+                  const labels = chart.data.labels;
+                  const datasets = chart.data.datasets[0];
+                  return labels.map((label, i) => {
+                    const value = datasets.data[i];
+                    const pct = Math.round(value / total * 100);
+                    return {
+                      text: label + ' — ' + value + ' (' + pct + '%)',
+                      fillStyle: datasets.backgroundColor[i],
+                      strokeStyle: datasets.backgroundColor[i],
+                      lineWidth: 0,
+                      index: i
+                    };
+                  });
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const v = context.parsed;
+                  const pct = Math.round(v / total * 100);
+                  return context.label + ': ' + v + ' (' + pct + '%)';
+                }
+              }
             }
           },
           cutout: '60%'
-        }
+        },
+        plugins: [{
+          id: 'donutLabels',
+          afterDatasetsDraw(chart) {
+            const ctx = chart.ctx;
+            const dataset = chart.data.datasets[0];
+            const meta = chart.getDatasetMeta(0);
+            meta.data.forEach((arc, i) => {
+              const value = dataset.data[i];
+              const pct = Math.round(value / total * 100);
+              if (pct < 5) return; // Skip very small segments
+              const angle = (arc.startAngle + arc.endAngle) / 2;
+              const r = (arc.innerRadius + arc.outerRadius) / 2;
+              const x = arc.x + Math.cos(angle) * r;
+              const y = arc.y + Math.sin(angle) * r;
+              ctx.fillStyle = 'white';
+              ctx.font = 'bold 13px Barlow';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(pct + '%', x, y);
+            });
+          }
+        }]
       });
     }
 
@@ -921,6 +1197,7 @@
       donneesGlobales.forEach(d => {
         if (cnt[d.impact] !== undefined) cnt[d.impact]++;
       });
+      const total = Object.values(cnt).reduce((a,b)=>a+b, 0);
       destroyChart('chart-impacts');
       const ctx = document.getElementById('chart-impacts');
       chartsInstances['chart-impacts'] = new Chart(ctx, {
@@ -936,12 +1213,40 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const v = context.parsed.y;
+                  const pct = total > 0 ? Math.round(v / total * 100) : 0;
+                  return v + ' actions (' + pct + '%)';
+                }
+              }
+            }
+          },
           scales: {
             y: { beginAtZero: true, ticks: { font: { family: 'Barlow' }, precision: 0 } },
             x: { ticks: { font: { family: 'Barlow', size: 13 } } }
           }
-        }
+        },
+        plugins: [{
+          id: 'barLabels',
+          afterDatasetsDraw(chart) {
+            const ctx = chart.ctx;
+            const dataset = chart.data.datasets[0];
+            const meta = chart.getDatasetMeta(0);
+            meta.data.forEach((bar, i) => {
+              const value = dataset.data[i];
+              if (value === 0) return;
+              const pct = total > 0 ? Math.round(value / total * 100) : 0;
+              ctx.fillStyle = '#003A6E';
+              ctx.font = 'bold 13px Barlow';
+              ctx.textAlign = 'center';
+              ctx.fillText(value + ' (' + pct + '%)', bar.x, bar.y - 8);
+            });
+          }
+        }]
       });
     }
 
